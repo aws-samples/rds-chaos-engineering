@@ -1,0 +1,56 @@
+{
+    "description": "fis-aurora-chaos",
+    "targets": {
+        "Instances-Target-1": {
+            "resourceType": "aws:ec2:instance",
+            "resourceArns": [
+                "targetinstance"
+            ],
+            "selectionMode": "ALL"
+        }
+    },
+    "actions": {
+        "fis-aurora-chaos-2": {
+            "actionId": "aws:ssm:send-command",
+            "description": "fis-aurora-chaos-2",
+            "parameters": {
+                "documentArn": "ssmdocument",
+                "documentParameters": "{\"ActionType\": \"chaos\"}",
+                "duration": "PT1M"
+            },
+            "targets": {
+                "Instances": "Instances-Target-1"
+            },
+            "startAfter": [
+                "fis-aurora-chaos-action"
+            ]
+        },
+        "fis-aurora-chaos-action": {
+            "actionId": "aws:ssm:send-command",
+            "description": "fis-aurora-chaos-action",
+            "parameters": {
+                "documentArn": "ssmdocument",
+                "documentParameters": "{\"ActionType\": \"chaos\"}",
+                "duration": "PT1M"
+            },
+            "targets": {
+                "Instances": "Instances-Target-1"
+            }
+        }
+    },
+    "stopConditions": [
+        {
+            "source": "none"
+        }
+    ],
+    "roleArn": "rolearn",
+    "tags": {
+        "Name": "fis-aurora-chaos"
+    },
+    "logConfiguration": {
+        "cloudWatchLogsConfiguration": {
+            "logGroupArn": "loggrouparn"
+        },
+        "logSchemaVersion": 2
+    }
+}

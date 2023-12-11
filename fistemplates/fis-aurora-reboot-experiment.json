@@ -1,0 +1,37 @@
+{
+    "description": "fis-aurora-reboot",
+    "targets": {
+        "DBInstances-Target-1": {
+            "resourceType": "aws:rds:db",
+            "resourceTags": {
+                "aws:cloudformation:stack-name": "auroralab"
+            },
+            "selectionMode": "PERCENT(50)"
+        }
+    },
+    "actions": {
+        "fis-aurora-reboot-action": {
+            "actionId": "aws:rds:reboot-db-instances",
+            "description": "fis-aurora-reboot-action",
+            "parameters": {},
+            "targets": {
+                "DBInstances": "DBInstances-Target-1"
+            }
+        }
+    },
+    "stopConditions": [
+        {
+            "source": "none"
+        }
+    ],
+    "roleArn": "rolearn",
+    "tags": {
+        "Name": "fis-aurora-reboot"
+    },
+    "logConfiguration": {
+        "cloudWatchLogsConfiguration": {
+            "logGroupArn": "loggrouparn"
+        },
+        "logSchemaVersion": 2
+    }
+}
