@@ -4,7 +4,7 @@
         "DBInstances-Target-1": {
             "resourceType": "aws:rds:db",
             "resourceTags": {
-                "aws:cloudformation:stack-name": "auroralab"
+                "InstanceGroup": "auroralab-pg"
             },
             "selectionMode": "PERCENT(50)"
         }

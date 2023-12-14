@@ -1,5 +1,5 @@
-## Amazon Aurora Fault Injection Workshop
-## Infrastructure template with an Aurora cluster for lab exercises
+## RDS Fault Injection Workshop
+## Infrastructure template RDS Chaos Engineering
 ##
 ##
 ## Dependencies:
@@ -17,7 +17,7 @@ Description: Amazon Aurora Fault Injection Workshop
 Parameters:
   IsWorkshopStudioEnv:
     Type: String
-    Default: "yes"
+    Default: "no"
     AllowedValues:
       - "no"
       - "yes"
@@ -29,33 +29,12 @@ Parameters:
   MyAssetsBucketPrefix:
     Description: Please leave blank, reserved for internal use.
     Type: String
-  deployMySQLandPGCluster:
-    Default: "no"
-    Description: Deployment of Aurora PG cluster is default. Setting this parameter will also deploy AMSv3.
-    Type: String
-    AllowedValues:
-      - "no"
-      - "yes"
-    Description: Deployment of Aurora PG cluster is default. Setting this parameter will also deploy AMSv3.
-
-
   LatestAmiId:
     Type: 'AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>'
     Default: '/aws/service/ami-amazon-linux-latest/amzn2-ami-hvm-x86_64-ebs'
     Description: Please leave as-is, reserved for internal use.
-  TemplateName:
-    Type: String
-    Default: 'auroralab-pg'
-    Description: Name used for different elements created.
-  CreateInstance:
-    Type: String
-    Default: "true"
-    AllowedValues:
-      - "true"
-      - "false"
-    Description: Determines if Aurora PostgreSQL Cluster needs to be created.
   DBInstanceClass:
-    Description: 'The instance type of database server.'
+    Description: 'The instance type of database nodes in Aurora cluster.'
     Type: String
     Default: 'db.r6g.large'
   DBEngineVersion:
@@ -89,9 +68,6 @@ Conditions:
   # Are we running in WS? - used to hardcode resource name prefixes when deployed in WS among other things, use the stack name otherwise
   IsWS: !Equals 
     - !Ref IsWorkshopStudioEnv
-    - "yes"
-  IsMySQL: !Equals
-    - !Ref deployMySQLandPGCluster
     - "yes"
 
 ## Mappings
@@ -229,11 +205,6 @@ Mappings:
 
 ## Resources
 Resources:
-
-  MyS3Bucket:
-    Type: AWS::S3::Bucket
-    Properties:
-      BucketName: !Join ['-', ['auroralab-vpc', !Select [4, !Split ['-', !Select [2, !Split ['/', !Ref AWS::StackId]]]]]]
 
 ## The VPC
   vpc:
@@ -416,43 +387,6 @@ Resources:
               - "arn:aws:s3:::*"
               - "arn:aws:s3:::*/*"
 
-## Create S3 bucket that will host lab resources (incl ML training data), if the ML lab condition allows it.
-  bucketLabData:
-    Type: "AWS::S3::Bucket"
-    Properties:
-      BucketName: !Join
-        - "-"
-        - - "auroralab"
-          - data
-          - !Select
-            - 0
-            - !Split
-              - "-"
-              - !Select
-                - 2
-                - !Split
-                  - "/"
-                  - !Ref 'AWS::StackId'
-      PublicAccessBlockConfiguration:
-        BlockPublicAcls: TRUE
-        BlockPublicPolicy: TRUE
-        IgnorePublicAcls: TRUE
-        RestrictPublicBuckets: TRUE
-      Tags:
-        - Key: Name
-          Value: !Join
-            - "-"
-            - - "auroralab"
-              - data
-              - !Select
-                - 0
-                - !Split
-                  - "-"
-                  - !Select
-                    - 2
-                    - !Split
-                      - "/"
-                      - !Ref 'AWS::StackId'
 
 ## Create DB subnet group
   dbSubnets:
@@ -504,9 +438,6 @@ Resources:
       IpProtocol: -1
       Description: "Allows all inbound access from sources with the same security group"
       SourceSecurityGroupId: !Ref dbClusterSecGroup
-
-
-
 
 ## Create a random generated password and store it as a secret for the DB cluster
   secretClusterAdminUser:
@@ -790,7 +721,6 @@ Resources:
 ## Create a Cloud9 host SSM bootstrap document
   ssmDocClientBootstrap: 
     Type: AWS::SSM::Document
-    DependsOn: [ bootstrapWaitHandle ]
     Properties:
       DocumentType: Command
       Name: !If [ IsWS, "auroralab-bootstrap-client", !Join ['-', ['auroralab-bootstrap-client', !Select [4, !Split ['-', !Select [2, !Split ['/', !Ref AWS::StackId]]]]]]]
@@ -808,217 +738,30 @@ Resources:
             - "#!/bin/bash -xe"
             - "exec > >(tee /var/log/user-data.log|logger -t user-data -s 2>/dev/console) 2>&1"
             - "echo \"$(date \"+%F %T\") * running as $(whoami)\" >> /bootstrap.log"
-            - "yum install -y unzip jq"
-            - "echo \"$(date \"+%F %T\") * upgrading Python 3\" >> /bootstrap.log"
-            - "curl -O https://www.python.org/ftp/python/3.9.17/Python-3.9.17.tgz;tar xvf Python-3.9.17.tgz;tar xvf Python-3.9.17.tgz"
-            - "cd Python-3.9.17"
-            - "./configure --enable-optimizations;sudo make altinstall"
-            - "update-alternatives --install /usr/bin/python3 python3 /usr/local/bin/python3.9 1"
-            - "python3 -m pip install --upgrade pip"
-            - "echo \"$(date \"+%F %T\") * python version\" >> /bootstrap.log"
-            - "python3 --version >> /bootstrap.log"
-            # - "sudo pip3 uninstall awscli -y"
-            # - "sudo rm -r /usr/bin/aws -f"
-            - "echo \"$(date \"+%F %T\") * installed supporting packages\" >> /bootstrap.log"
-            # - "mkdir /home/ec2-user/awscl"
-            # - "curl \"https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip\" -o \"/home/ec2-user/awscl/awscliv2.zip\""
-            # - "unzip \"/home/ec2-user/awscl/awscliv2.zip\" -d \"/home/ec2-user/awscl\""
-            # - "sudo chown ec2-user:ec2-user /home/ec2-user/awscl/aws -R"
-            # - "sudo /home/ec2-user/awscl/aws/install -i /usr/local/aws-cli -b /usr/local/bin"
-            # - "echo \"$(date \"+%F %T\") * installed awscli (v2)\" >> /bootstrap.log"
-            - "yum remove -y mariadb"
-            - "yum install -y https://repo.percona.com/yum/percona-release-latest.noarch.rpm"
-            - "percona-release disable all"
-            - "percona-release setup pt"
-            - "percona-release setup ps80"
-            - "yum install -y percona-toolkit percona-server-client"
-            - "mysql --version >> /bootstrap.log"
-            - "echo \"$(date \"+%F %T\") * installed Percona tools and client libraries\" >> /bootstrap.log"
-            - "curl -s https://packagecloud.io/install/repositories/akopytov/sysbench/script.rpm.sh | sudo bash"
-            - "yum -y install sysbench"
-            - "sysbench --version >> /bootstrap.log"
-            - "echo \"$(date \"+%F %T\") * installed Sysbench\" >> /bootstrap.log"
-            - "git clone https://github.com/Percona-Lab/sysbench-tpcc.git /home/ec2-user/environment/sysbench-tpcc"
-            - "echo \"$(date \"+%F %T\") * cloned percona/sysbench-tpcc repo\" >> /bootstrap.log"
-            - "git clone https://github.com/datacharmer/test_db.git /home/ec2-user/environment/samples"
-            - "echo \"$(date \"+%F %T\") * cloned sample data repo\" >> /bootstrap.log"
-            - "cd /home/ec2-user/environment"
-            - "curl -O https://ams-labs-prod-content-us-east-1.s3.amazonaws.com/support/client-requirements.txt"
-            - "pip3 install -r client-requirements.txt"             
-            - "echo \"$(date \"+%F %T\") * downloaded lab assets\" >> /bootstrap.log"
-            - "mkdir -p /home/ec2-user/.aws"
-            - "touch /home/ec2-user/.aws/config"
-            - "echo \"[default]\" >> /home/ec2-user/.aws/config"
-            - !Sub "echo \"region = ${AWS::Region}\" >> /home/ec2-user/.aws/config"
-            - "chown -R ec2-user:ec2-user /home/ec2-user/.aws"
-            - "aws --version >> /bootstrap.log"
-            - "echo \"$(date \"+%F %T\") * configured aws cli\" >> /bootstrap.log"
-            - 'export ANALYTICSURI="https://e6oqcsgjei.execute-api.us-east-1.amazonaws.com/v1/track" && echo "export ANALYTICSURI=\"$ANALYTICSURI\"" >> /home/ec2-user/.bashrc'
-            - !Sub 'export STACKREGION="${AWS::Region}" && echo "export STACKREGION=\"$STACKREGION\"" >> /home/ec2-user/.bashrc'
-            - !Sub 'export STACKNAME="${AWS::StackName}" && echo "export STACKNAME=\"$STACKNAME\"" >> /home/ec2-user/.bashrc'
-            - Fn::Join:
-              - ""
-              - - 'export STACKUUID="'
-                - !Select
-                  - 2
-                  - !Split
-                    - "/"
-                    - !Ref 'AWS::StackId'
-                - '" && echo "export STACKUUID=\"$STACKUUID\"" >> /home/ec2-user/.bashrc'
-            - !Sub 'export DATABUCKET="${bucketLabData}" && echo "export DATABUCKET=\"$DATABUCKET\"" >> /home/ec2-user/.bashrc'
-            - !Sub 'export DBCLUSTERPG="${cpgClusterParams3}" && echo "export DBCLUSTERPG=\"$DBCLUSTERPG\"" >> /home/ec2-user/.bashrc'
-            - "echo \"$(date \"+%F %T\") * environment vars initialized\" >> /bootstrap.log"
-            - !Sub "export SECRETSTRING=`aws secretsmanager get-secret-value --secret-id \"${secretClusterAdminUser}\" --region ${AWS::Region} | jq -r '.SecretString'` && export DBPASS=`echo $SECRETSTRING | jq -r '.password'` && export DBUSER=`echo $SECRETSTRING | jq -r '.username'`"
-            - 'echo "export DBPASS=\"$DBPASS\"" >> /home/ec2-user/.bashrc && echo "export DBUSER=$DBUSER" >> /home/ec2-user/.bashrc'
-            - 'echo "export PGPASSWORD=\"$DBPASS\"" >> /home/ec2-user/.bashrc && echo "export PGUSER=$DBUSER" >> /home/ec2-user/.bashrc'
-            - "chown -R ec2-user:ec2-user /home/ec2-user/environment/*"
-            - "echo \"$(date \"+%F %T\") * updated file ownership\" >> /bootstrap.log"
-            - "echo \"$(date \"+%F %T\") * resizing local storage\" >> /bootstrap.log"
-            - "curl -O https://ams-labs-prod-content-us-east-1.s3.amazonaws.com/support/resize.sh"
-            - "chown -R ec2-user:ec2-user /home/ec2-user/environment/*"  
             - sudo yum install -y jq &>> /bootstrap.log
             - sudo amazon-linux-extras enable postgresql14 &>> /bootstrap.log
             - sudo yum clean metadata && sudo yum install -y postgresql-contrib postgresql postgresql-devel libpq-devel sysbench &>> /bootstrap.log
             - sudo yum install -y gcc gcc-devel python3-devel initscripts &>> /bootstrap.log
             - echo "$(date "+%F %T") - Step 2 - Exporting the required environment variables" >> /bootstrap.log
-            - !Sub REGION=${AWS::Region}
-            - echo "export PGDATABASE=mylab" >> /home/ec2-user/.bashrc
+            - "cd /home/ec2-user/environment"
             - !If
               - IsWS
               - !Sub "aws s3 cp s3://${MyAssetsBucketName}/${MyAssetsBucketPrefix}fis/monitoring.sh monitoring.sh"
-              - echo "yet to work on CFN"
+              - !Sub "curl -o monitoring.sh https://raw.githubusercontent.com/aws-samples/rds-chaos-engineering/main/monitoring/monitoring.sh"
             - !If
               - IsWS
               - !Sub "aws s3 cp s3://${MyAssetsBucketName}/${MyAssetsBucketPrefix}fis/fis-aurora-chaos-experiment.json fis-aurora-chaos-experiment.json"
-              - echo "yet to work on CFN"
+              - !Sub "curl -o fis-aurora-chaos-experiment.json https://raw.githubusercontent.com/aws-samples/rds-chaos-engineering/main/fistemplates/fis-aurora-chaos-experiment.json"
             - !If
               - IsWS
               - !Sub "aws s3 cp s3://${MyAssetsBucketName}/${MyAssetsBucketPrefix}fis/fis-aurora-reboot-experiment.json fis-aurora-reboot-experiment.json"
-              - echo "yet to work on CFN"
+              - !Sub "curl -o fis-aurora-reboot-experiment.json https://raw.githubusercontent.com/aws-samples/rds-chaos-engineering/main/fistemplates/fis-aurora-reboot-experiment.json"
             - !If
               - IsWS
               - !Sub "aws s3 cp s3://${MyAssetsBucketName}/${MyAssetsBucketPrefix}fis/fis-aurora-fault-injection.json fis-aurora-fault-injection.json"
-              - echo "yet to work on CFN"
-            - "bash /home/ec2-user/environment/resize.sh 100"
-            - !Sub "curl -X PUT -H 'Content-Type:' --data-binary '{\"Status\": \"SUCCESS\", \"Reason\": \"Bootstrap complete\", \"UniqueId\": \"${AWS::StackId}\", \"Data\": \"Bootstrap complete\"}' \"${bootstrapWaitHandle}\""
+              - !Sub "curl -o fis-aurora-fault-injection.json https://raw.githubusercontent.com/aws-samples/rds-chaos-engineering/main/fistemplates/fis-aurora-fault-injection.json"
             - "echo \"$(date \"+%F %T\") * signal bootstrap complete\" >> /bootstrap.log"
             - "shutdown -r now"
-
-## Create a Cloud9 host SSM bootstrap document
-  ssmDocClientFIS: 
-    Type: AWS::SSM::Document
-    Properties:
-      DocumentType: Command
-      Name: !If [ IsWS, "auroralab-postgres-fis", !Join ['-', ['auroralab-postgres-fis', !Select [4, !Split ['-', !Select [2, !Split ['/', !Ref AWS::StackId]]]]]]]
-      Tags:
-        - Key: Name
-          Value: !If [ IsWS, "auroralab-postgres-fis", !Join ['-', ['auroralab-postgres-fis', !Select [4, !Split ['-', !Select [2, !Split ['/', !Ref AWS::StackId]]]]]]]
-      Content:
-        schemaVersion: '2.2'
-        description: "SSM document for fault injection queries"
-        parameters:
-          ActionType:
-            type: String
-        mainSteps:
-        - action: aws:runShellScript
-          name: aurorafis
-          inputs:
-            runCommand:
-                - |
-                  #!/bin/bash
-                  export actionType={{ ActionType }}
-                  function setEnv  
-                  {
-                      export AWSREGION=`aws ec2 describe-availability-zones --output text --query 'AvailabilityZones[0].[RegionName]'`
-                      export CLUSTERENDP=`aws rds describe-db-clusters --region $AWSREGION --query "DBClusters[?starts_with(DBClusterIdentifier, 'auroralab-pg-cluster')].Endpoint" --output text`
-                      export READERENDP=`aws rds describe-db-clusters --region $AWSREGION --query "DBClusters[?starts_with(DBClusterIdentifier, 'auroralab-pg-cluster')].ReaderEndpoint" --output text`
-                      export SECRETARN=`aws secretsmanager list-secrets --query "SecretList[?starts_with(Name, 'secretClusterAdminUser')].ARN"  --region $AWSREGION --output text`
-                      export CREDS=`aws secretsmanager get-secret-value --secret-id $SECRETARN --region $AWSREGION | jq -r '.SecretString'`
-                      export READONLYNODE=`aws rds describe-db-clusters --query "DBClusters[?starts_with(DBClusterIdentifier, 'auroralab-pg-cluster')].DBClusterMembers" --output json | jq '.[][] | select(.IsClusterWriter == false) | .DBInstanceIdentifier' |  tr -d '"'| shuf -n 1`
-                      export DBUSER="`echo $CREDS | jq -r '.username'`"
-                      export DBPASS="`echo $CREDS | jq -r '.password'`"
-                      export PGPASSWORD="$DBPASS"
-                      export PGUSER="$DBUSER"
-                      export PGDATABASE=mylab
-                  }
-                  function instancecrash
-                  {
-                    echo "Starting instance crash on ${READERENDP} at `date`"       
-                    psql -h ${READERENDP} -c "SELECT aurora_inject_crash ('node')" > /dev/null 2>&1
-                    echo "Instance crash completed on ${READERENDP} at `date`"
-                  }
-                  function replicafailure
-                  {
-                    echo "Initiating Replica failure on ${READONLYNODE} at `date`"
-                    psql -h ${CLUSTERENDP} -c "SELECT aurora_inject_replica_failure(100, 60,'$READONLYNODE')" 
-                    echo "Replica failure completed on ${READONLYNODE} at `date`"
-                  }
-                  function diskfailure
-                  {
-                    echo "Initiating disk congestion on ${CLUSTERENDP} at `date`"
-                    psql -h ${CLUSTERENDP} -c "SELECT aurora_inject_disk_failure(100, -1, true, 20)" 
-                    echo "Disk Congestion completed on ${CLUSTERENDP} at `date`"	
-                  }
-                  setEnv
-                  if [ "$actionType" = "chaos" ]; then
-                    # AWS SSM parameter name
-                    parameter_name="/fis/random_choice"
-                    # Array of choices
-                    choices=("instancecrash" "replicafailure" "diskcongestion")
-                    # Get the previous choice from AWS SSM Parameter Store
-                    previous_choice=$(aws ssm get-parameter --name "$parameter_name" --query "Parameter.Value" --output text 2>/dev/null)
-                    echo "previous selection $previous_choice"
-                    new_choices=()
-                    # Iterate through the original array and add elements to the new array
-                    for choice in "${choices[@]}"; do
-                      if [[ "$choice" != "$previous_choice" ]]; then
-                        new_choices+=("$choice")
-                      fi
-                    done
-                    # Get the length of the array
-                    length=${#new_choices[@]}
-                    
-                    # Generate a random index
-                    random_index=$((RANDOM % length))
-                    
-                    # Get the random choice
-                    random_choice=${new_choices[random_index]}
-                    echo "current selection $random_choice"
-                    
-                    # Store the current choice in AWS SSM Parameter Store
-                    aws ssm put-parameter --name "$parameter_name" --value "$random_choice" --type "String" --overwrite
-                    actionType=$random_choice
-                  fi
-                  case ${actionType} in
-                      "instancecrash")
-                          instancecrash
-                          ;;
-                      "replicafailure")
-                          replicafailure
-                          ;;
-                      "diskcongestion")
-                          diskcongestion
-                          ;;
-                      *)
-                          echo "Invalid Action"
-                          ;;
-                  esac
-
-## Create cluster parameter group for Aurora MySQL 3
-  cpgClusterParams3:
-    Type: "AWS::RDS::DBClusterParameterGroup"
-    Properties:
-      Description:  !If [ IsWS, "auroralab-mysql3-cluster-params", !Join ['-', ['auroralab-mysql3-cluster-params', !Select [4, !Split ['-', !Select [2, !Split ['/', !Ref AWS::StackId]]]]]]]
-      Family: !FindInMap [ ClusterSettings, global, dbFamilyAMS3 ]
-      Parameters:
-        aws_default_s3_role: !GetAtt roleServiceIntegration.Arn
-        innodb_stats_persistent_sample_pages: "256"
-        slow_query_log: "1"
-        long_query_time: "1"
-        log_output: FILE
-      Tags:
-        - Key: Name
-          Value:  !If [ IsWS, "auroralab-mysql3-cluster-params", !Join ['-', ['auroralab-mysql3-cluster-params', !Select [4, !Split ['-', !Select [2, !Split ['/', !Ref AWS::StackId]]]]]]]
 
 
 ### !!!WARNING :  DO NOT DELETE THIS COMMENT BLOCK. It will affect stackset processing functionality.
@@ -1033,27 +776,27 @@ Resources:
   apgcustomdbparamgroup:
     Type: AWS::RDS::DBParameterGroup
     Properties:
-      Description: !Sub ${TemplateName}-dbparamgroup
+      Description: rds-chaos-engg-dbparamgroup
       Family: !FindInMap [ ClusterSettings, global, pgdbFamily ]
       Parameters:
         log_rotation_age: '1440'
         log_rotation_size: '102400'
       Tags:
         - Key: Name
-          Value: !Sub ${TemplateName}-dbparamgroup
+          Value: rds-chaos-engg-dbparamgroup
 
  ## Create cluster parameter group for apg
   apgcustomclusterparamgroup:
     Type: AWS::RDS::DBClusterParameterGroup
     Properties:
-      Description: !Sub ${TemplateName}-clusterparamgroup
+      Description: rds-chaos-engg-clusterparamgroup
       Family: !FindInMap [ ClusterSettings, global, pgdbFamily ]
       Parameters:
         rds.force_ssl: 0
         shared_preload_libraries: 'pg_stat_statements,pg_hint_plan,auto_explain'
       Tags:
         - Key: Name
-          Value: !Sub ${TemplateName}-clusterparamgroup
+          Value: rds-chaos-engg-clusterparamgroup
 
  ## Create Aurora PostgreSQL cluster
   dbClusterapg:
@@ -1073,7 +816,7 @@ Resources:
       VpcSecurityGroupIds: [ !Ref dbClusterSecGroup ]
       Tags:
         - Key: Name
-          Value: !Sub ${TemplateName}-cluster
+          Value: rds-chaos-engg-cluster
 ## Deploy the first cluster node (always the writer)
   dbNodeWriter:
     Type: AWS::RDS::DBInstance
@@ -1095,6 +838,8 @@ Resources:
       Tags:
         - Key: Name
           Value: !If [ IsWS, "auroralab-pg-node-1", !Join ['-', ['auroralab-pg-node-1', !Select [4, !Split ['-', !Select [2, !Split ['/', !Ref AWS::StackId]]]]]]]
+        - Key: InstanceGroup
+          Value: "auroralab-pg"
 ## Deploy a reader node
   dbNodeSecondary:
     Type: AWS::RDS::DBInstance
@@ -1116,7 +861,8 @@ Resources:
       Tags:
         - Key: Name
           Value: !If [ IsWS, "auroralab-pg-node-2", !Join ['-', ['auroralab-pg-node-2', !Select [4, !Split ['-', !Select [2, !Split ['/', !Ref AWS::StackId]]]]]]]
-
+        - Key: InstanceGroup
+          Value: "auroralab-pg"
 ## Deploy a reader node
   dbNodetertiary:
     Type: AWS::RDS::DBInstance
@@ -1138,96 +884,8 @@ Resources:
       Tags:
         - Key: Name
           Value: !If [ IsWS, "auroralab-pg-node-3", !Join ['-', ['auroralab-pg-node-3', !Select [4, !Split ['-', !Select [2, !Split ['/', !Ref AWS::StackId]]]]]]]
-
-## Create Aurora MySQL 3 cluster
-  dbCluster:
-    Type: "AWS::RDS::DBCluster"
-    DeletionPolicy: Delete
-    Condition: IsMySQL
-    Properties:
-      Engine: !FindInMap [ ClusterSettings, global, dbEngine ]
-      EngineVersion: !FindInMap [ ClusterSettings, global, dbVersionAMS3 ]
-      DBSubnetGroupName: !Ref dbSubnets
-      DBClusterParameterGroupName: !Ref cpgClusterParams3
-      DBClusterIdentifier: !If [ IsWS, "auroralab-mysql-cluster", !Join ['-', ['auroralab-mysql-cluster', !Select [4, !Split ['-', !Select [2, !Split ['/', !Ref AWS::StackId]]]]]]]
-      BackupRetentionPeriod: 1
-      MasterUsername: !Join ["", ["{{resolve:secretsmanager:", !Ref secretClusterAdminUser, ":SecretString:username}}" ]]
-      MasterUserPassword: !Join ["", ["{{resolve:secretsmanager:", !Ref secretClusterAdminUser, ":SecretString:password}}" ]]
-      DatabaseName: !FindInMap [ ClusterSettings, global, dbSchema ]
-      StorageEncrypted: true
-      VpcSecurityGroupIds: [ !Ref dbClusterSecGroup ]
-      EnableCloudwatchLogsExports: [ error, slowquery ]
-      #KmsKeyId: !GetAtt dbclusterkey.Arn
-      EnableIAMDatabaseAuthentication: true
-      AssociatedRoles:
-        - RoleArn: !GetAtt roleServiceIntegration.Arn
-      Tags:
-        - Key: Name
-          Value: !If [ IsWS, "auroralab-mysql-cluster", !Join ['-', ['auroralab-mysql-cluster', !Select [4, !Split ['-', !Select [2, !Split ['/', !Ref AWS::StackId]]]]]]]
-## Deploy cluster node #1 (may or may not be writer depending which one initializes first)
-  dbNode1:
-    Type: "AWS::RDS::DBInstance"
-    DeletionPolicy: Delete
-    Condition: IsMySQL
-    Properties:
-      DBClusterIdentifier: !If [ IsMySQL, !Ref dbCluster,""]
-      DBInstanceIdentifier:  !If [ IsWS, "auroralab-mysql-node-1", !Join ['-', ['auroralab-mysql-node-1', !Select [4, !Split ['-', !Select [2, !Split ['/', !Ref AWS::StackId]]]]]]]
-      CopyTagsToSnapshot: true
-      DBInstanceClass: !FindInMap [ RegionalSettings, !Ref "AWS::Region", nodeType ]
-      CACertificateIdentifier: "rds-ca-rsa2048-g1"
-      Engine: !FindInMap [ ClusterSettings, global, dbEngine ]
-      MonitoringInterval: 1
-      MonitoringRoleArn: !GetAtt roleEnhancedMonitoring.Arn
-      PubliclyAccessible: false
-      EnablePerformanceInsights: true
-      PerformanceInsightsRetentionPeriod: 7
-      AvailabilityZone: !FindInMap [ RegionalSettings, !Ref "AWS::Region", az1 ]
-      Tags:
-        - Key: Name
-          Value: !If [ IsWS, "auroralab-mysql-node-1", !Join ['-', ['auroralab-mysql-node-1', !Select [4, !Split ['-', !Select [2, !Split ['/', !Ref AWS::StackId]]]]]]]
-## Deploy cluster node #2 (may or may not be writer depending which one initializes first)
-  dbNode2:
-    Type: "AWS::RDS::DBInstance"
-    DeletionPolicy: Delete
-    Condition: IsMySQL
-    Properties:
-      DBClusterIdentifier: !If [ IsMySQL, !Ref dbCluster,""]
-      DBInstanceIdentifier:  !If [ IsWS, "auroralab-mysql-node-2", !Join ['-', ['auroralab-mysql-node-2', !Select [4, !Split ['-', !Select [2, !Split ['/', !Ref AWS::StackId]]]]]]]
-      CopyTagsToSnapshot: true
-      DBInstanceClass: !FindInMap [ RegionalSettings, !Ref "AWS::Region", nodeType ]
-      CACertificateIdentifier: "rds-ca-rsa2048-g1"
-      Engine: !FindInMap [ ClusterSettings, global, dbEngine ]
-      MonitoringInterval: 1
-      MonitoringRoleArn: !GetAtt roleEnhancedMonitoring.Arn
-      PubliclyAccessible: false
-      EnablePerformanceInsights: true
-      PerformanceInsightsRetentionPeriod: 7
-      AvailabilityZone: !FindInMap [ RegionalSettings, !Ref "AWS::Region", az2 ]
-      Tags:
-        - Key: Name
-          Value: !If [ IsWS, "auroralab-mysql-node-2", !Join ['-', ['auroralab-mysql-node-2', !Select [4, !Split ['-', !Select [2, !Split ['/', !Ref AWS::StackId]]]]]]]
-
-## Deploy cluster node #3 (may or may not be writer depending which one initializes first)
-  dbNode3:
-    Type: "AWS::RDS::DBInstance"
-    DeletionPolicy: Delete
-    Condition: IsMySQL
-    Properties:
-      DBClusterIdentifier: !If [ IsMySQL, !Ref dbCluster,""]
-      DBInstanceIdentifier:  !If [ IsWS, "auroralab-mysql-node-3", !Join ['-', ['auroralab-mysql-node-3', !Select [4, !Split ['-', !Select [2, !Split ['/', !Ref AWS::StackId]]]]]]]
-      CopyTagsToSnapshot: true
-      DBInstanceClass: !FindInMap [ RegionalSettings, !Ref "AWS::Region", nodeType ]
-      CACertificateIdentifier: "rds-ca-rsa2048-g1"
-      Engine: !FindInMap [ ClusterSettings, global, dbEngine ]
-      MonitoringInterval: 1
-      MonitoringRoleArn: !GetAtt roleEnhancedMonitoring.Arn
-      PubliclyAccessible: false
-      EnablePerformanceInsights: true
-      PerformanceInsightsRetentionPeriod: 7
-      AvailabilityZone: !FindInMap [ RegionalSettings, !Ref "AWS::Region", az3 ]
-      Tags:
-        - Key: Name
-          Value: !If [ IsWS, "auroralab-mysql-node-3", !Join ['-', ['auroralab-mysql-node-3', !Select [4, !Split ['-', !Select [2, !Split ['/', !Ref AWS::StackId]]]]]]]
+        - Key: InstanceGroup
+          Value: "auroralab-pg"
 
 
 
@@ -1239,14 +897,6 @@ Resources:
 ## the DB cluster identifier is actually lowercased, but the resource ID
 ## still contains uppercase, so you get a mismatch on the scalable target ResourceId
 
-
-## Add scaling policy
-
-
-## Create sysbench prep SSM document
-
-## Create a Sagemaker Lifecycle hook, which will clone the github repo and get the Jupyter notebook and other resources needed to build the model.
-## using nohup, so the script keeps running after 5 minutes. The onstart event fails, if script doesn't finish in 5 minutes.
 
 
 ## Create role for use with the lab support function
@@ -1325,7 +975,6 @@ Resources:
       Environment:
         Variables:
           REGION: !Ref "AWS::Region"
-          ANALYTICSURI: "https://e6oqcsgjei.execute-api.us-east-1.amazonaws.com/v1/track"
       Code:
         ZipFile: |
           # Dependencies
@@ -1479,21 +1128,6 @@ Resources:
                 Resource: "arn:aws:logs:*:*:*"
               - Effect: Allow
                 Action:
-                  - "s3:ListBucket"
-                  - "s3:GetObject"
-                  - "s3:GetObjectVersion"
-                  - "s3:DeleteObject"
-                  - "s3:DeleteObjects"
-                  - "s3:ListMultipartUploadParts"
-                  - "s3:PutObject"
-                  - "s3:ListObjects"
-                  - "s3:ListObjectsV2"
-                  - "s3:ListObjectVersions"
-                Resource:
-                  - !Sub "arn:aws:s3:::${bucketLabData}/*"
-                  - !Sub "arn:aws:s3:::${bucketLabData}"
-              - Effect: Allow
-                Action:
                   - iam:CreateInstanceProfile
                   - iam:GetRole
                   - iam:PassRole
@@ -1512,7 +1146,6 @@ Resources:
 ## Create Lambda function to implement conditional initialization and cleanup of accounts
   funcLabAccount:
     Type: "AWS::Lambda::Function"
-    DependsOn: [ bucketLabData ]
     Properties:
       FunctionName: !If [ IsWS, "auroralab-account", !Join ['-', ['auroralab-account', !Select [4, !Split ['-', !Select [2, !Split ['/', !Ref AWS::StackId]]]]]]]
       Description: "Custom Resource to provide account initialization and cleanup for the Aurora MySQL labs."
@@ -1604,13 +1237,6 @@ Resources:
                   )
                   print("[INFO]", "Created IAM instance profile:", "AWSCloud9SSMInstanceProfile")
 
-              # on stack deletion
-              if event["RequestType"] == 'Delete':
-                # delete all objects out of the bucket
-                bucket = s3.Bucket(props["DataBucket"])
-                bucket.objects.delete()
-                print("[INFO]", "Bucket cleaned up for:", props["DataBucket"])
-
               # success
               response_status = cfnresponse.SUCCESS
 
@@ -1632,7 +1258,6 @@ Resources:
     Type: "Custom::resLabAccount"
     Properties:
       ServiceToken: !GetAtt funcLabAccount.Arn
-      DataBucket: !Ref bucketLabData
       StackRegion: !Ref "AWS::Region"
       StackName: !Ref "AWS::StackName"
       StackUUID: !Select
@@ -1640,17 +1265,6 @@ Resources:
         - !Split
           - "/"
           - !Ref "AWS::StackId"
-
-## Wait condition to signal bootstrap completion
-  bootstrapWaitHandle:
-    Type: "AWS::CloudFormation::WaitConditionHandle"
-  bootstrapWaitCondition:
-    Type: "AWS::CloudFormation::WaitCondition"
-    DependsOn: [ resLabSupport ]
-    Properties: 
-      Count: 1
-      Handle: !Ref bootstrapWaitHandle
-      Timeout: 900
 
 
 
